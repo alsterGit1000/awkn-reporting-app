@@ -1,0 +1,16 @@
+awkn_openai_key.env
+
+# Ignore Python cache and environment
+__pycache__/
+*.py[cod]
+*.env
+
+# Ignore virtual environment folders
+env/
+venv/
+
+# Ignore OS-specific files
+.DS_Store
+
+# Ignore the dotenv file with secrets
+.env
