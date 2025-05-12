@@ -39,7 +39,7 @@ cd awkn-reporting-app
 ### 2. Set up the backend
 ```bash
 cd backend
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate   # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn main:app --reload

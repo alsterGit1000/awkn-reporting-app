@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import axios from "axios";
 import {
   BarChart,
@@ -10,15 +10,14 @@ import {
 } from "recharts";
 
 function App() {
-  const [summary, setSummary] = useState("");
-  const [chartData, setChartData] = useState([]);
-  const [tableData, setTableData] = useState([]);
-  const [tableColumns, setTableColumns] = useState([]);
-  const [showSummary, setShowSummary] = useState(false);
-  const [showChart, setShowChart] = useState(false);
+  const [uploads, setUploads] = useState([]);
+
+  const fileInputRef = useRef(null);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
+    if (!file) return;
+
     const formData = new FormData();
     formData.append("file", file);
 
@@ -30,97 +29,153 @@ function App() {
       }
     );
 
-    setSummary(response.data.summary);
-    setChartData(response.data.chart_data);
-    setTableData(response.data.table_data || []); // expecting backend to return this
-    setTableColumns(response.data.columns || []); // same here
-    setShowSummary(false); // reset summary visibility
+    const data = response.data;
+
+    const newUpload = {
+      id: Date.now(), // unique id
+      fileName: file.name,
+      summary: data.summary,
+      chartData: data.chart_data,
+      columns: data.columns,
+      rows: data.rows,
+      showSummary: false,
+      showChart: false,
+    };
+
+    setUploads((prev) => [...prev, newUpload]);
+    fileInputRef.current.value = null;
+  };
+
+  const toggleSummary = (id) => {
+    setUploads((prevUploads) =>
+      prevUploads.map((upload) =>
+        upload.id === id
+          ? { ...upload, showSummary: !upload.showSummary }
+          : upload
+      )
+    );
+  };
+
+  const toggleChart = (id) => {
+    setUploads((prevUploads) =>
+      prevUploads.map((upload) =>
+        upload.id === id ? { ...upload, showChart: !upload.showChart } : upload
+      )
+    );
+  };
+
+  const removeUpload = (id) => {
+    const confirmDelete = window.confirm(
+      "Are you sure you want to remove this spreadsheet?"
+    );
+    if (confirmDelete) {
+      setUploads((prev) => prev.filter((upload) => upload.id !== id));
+    }
   };
 
   return (
-    <div className="p-8">
-      <h1 className="text-2xl font-bold mb-4">AWKN Reporting App</h1>
+    <div className="min-h-screen bg-slate-50 text-gray-800 p-6">
+      <div className="max-w-6xl mx-auto space-y-6">
+        <header className="text-center">
+          <h1 className="text-4xl font-bold text-indigo-700">
+            Spreadsheet Transformer
+          </h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Upload and analyze spreadsheet data
+          </p>
+        </header>
 
-      <input
-        type="file"
-        accept=".xlsx"
-        onChange={handleUpload}
-        className="mb-4"
-      />
+        <div className="bg-white p-6 rounded-2xl shadow-md">
+          <label className="block text-sm font-medium mb-2">
+            + Add Excel File
+          </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx"
+            onChange={handleUpload}
+            className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-white file:bg-indigo-600 hover:file:bg-indigo-700"
+          />
+        </div>
 
-      {/* Table Display */}
-      {tableColumns.length > 0 && tableData.length > 0 && (
-        <div className="mb-6 overflow-x-auto border rounded-lg">
-          <table className="table-auto w-full border-collapse text-sm">
-            <thead className="bg-gray-100">
-              <tr>
-                {tableColumns.map((col) => (
-                  <th key={col} className="px-4 py-2 border">
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {tableData.map((row, index) => (
-                <tr key={index}>
-                  {tableColumns.map((col) => (
-                    <td key={col} className="px-4 py-2 border">
-                      {row[col]}
-                    </td>
+        {uploads.map((upload) => (
+          <div key={upload.id} className="bg-white p-6 rounded-2xl shadow-md">
+            <h2 className="text-lg font-semibold mb-4">{upload.fileName}</h2>
+
+            <div className="overflow-auto mb-4">
+              <table className="min-w-full border text-sm">
+                <thead>
+                  <tr className="bg-slate-100">
+                    {upload.columns.map((col, i) => (
+                      <th
+                        key={i}
+                        className="text-left p-2 border-b font-semibold"
+                      >
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {upload.rows.map((row, i) => (
+                    <tr key={i}>
+                      {row.map((val, j) => (
+                        <td key={j} className="p-2 border-b">
+                          {val}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                </tbody>
+              </table>
+            </div>
 
-      {/* Toggle Chart Button */}
-      {chartData.length > 0 && (
-        <div className="mb-4">
-          <button
-            onClick={() => setShowChart(!showChart)}
-            className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 transition"
-          >
-            {showChart ? "Hide Chart" : "Show Chart"}
-          </button>
-        </div>
-      )}
+            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+              <button
+                onClick={() => toggleSummary(upload.id)}
+                Ok
+                className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+              >
+                {upload.showSummary ? "Hide Summary" : "Show Summary"}
+              </button>
+              <button
+                onClick={() => toggleChart(upload.id)}
+                className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700"
+              >
+                {upload.showChart ? "Hide Chart" : "Show Chart"}
+              </button>
 
-      {/* Summary Panel */}
-      {showSummary && (
-        <div className="bg-gray-50 border p-4 rounded">
-          <h2 className="text-xl font-semibold mb-2">Summary</h2>
-          <p className="whitespace-pre-line">{summary}</p>
-        </div>
-      )}
+              <button
+                onClick={() => removeUpload(upload.id)}
+                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+              >
+                Remove
+              </button>
+            </div>
 
-      {/* Toggle Summary Button */}
-      {summary && (
-        <div className="mb-4">
-          <button
-            onClick={() => setShowSummary(!showSummary)}
-            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition"
-          >
-            {showSummary ? "Hide Summary" : "Show Summary"}
-          </button>
-        </div>
-      )}
+            {upload.showSummary && (
+              <div className="mt-4 whitespace-pre-line text-sm text-gray-700">
+                {upload.summary}
+              </div>
+            )}
 
-      {/* Chart */}
-      {showChart && chartData.length > 0 && (
-        <div style={{ width: "100%", height: 300 }} className="mt-6">
-          <ResponsiveContainer>
-            <BarChart data={chartData}>
-              <XAxis dataKey="label" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="value" fill="#3b82f6" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+            {upload.showChart &&
+              upload.chartData &&
+              upload.chartData.length > 0 && (
+                <div className="mt-6">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={upload.chartData}>
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#4f46e5" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
