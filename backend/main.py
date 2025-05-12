@@ -1,57 +1,86 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Dict
 import pandas as pd
 import io
 import os
-from openai import OpenAI
+import openai
+import logging
 from dotenv import load_dotenv
 
+# Load environment variables
+load_dotenv(dotenv_path="awkn_openai_key.env")
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize OpenAI client
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
+# Initialize FastAPI app
 app = FastAPI()
 
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # You may want to restrict this in production
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load env file explicitly
-load_dotenv(dotenv_path="awkn_openai_key.env")
+# Response model
+class UploadResponse(BaseModel):
+    summary: str
+    chart_data: List[Dict[str, str]]
+    columns: List[str]
+    rows: List[List[str]]
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-@app.post("/upload")
+@app.post("/upload", response_model=UploadResponse)
 async def upload_excel(file: UploadFile = File(...)):
-    content = await file.read()
-    df = pd.read_excel(io.BytesIO(content))
+    if not file.filename.endswith((".xls", ".xlsx")):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only Excel files are supported.")
 
-    summary = generate_summary(df)
-    col_names = df.columns.tolist()
-    if len(col_names) >= 2:
-        chart_data = df[[col_names[0], col_names[1]]].dropna()
-        chart_data.columns = ["label", "value"]
-        chart_data = chart_data.to_dict(orient="records")
-    else:
-        chart_data = []
+    try:
+        content = await file.read()
+        df = pd.read_excel(io.BytesIO(content))
 
-    # Return full table and column names
-    table_data = df.to_dict(orient="records")
+        summary = generate_summary(df)
+        columns = df.columns.tolist()
+        rows = df.fillna("").astype(str).values.tolist()
 
-    return {
-        "summary": summary,
-        "chart_data": chart_data,
-        "table_data": table_data,
-        "columns": col_names
-    }
+        # Basic chart data extraction
+        if len(columns) >= 2:
+            chart_df = df[[columns[0], columns[1]]].dropna()
+            chart_df.columns = ["label", "value"]
+            chart_data = chart_df.astype(str).to_dict(orient="records")
+        else:
+            chart_data = []
 
+        return UploadResponse(
+            summary=summary,
+            chart_data=chart_data,
+            columns=columns,
+            rows=rows,
+        )
+
+    except Exception as e:
+        logger.error(f"Error processing file: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing file: {e}")
 
 
 def generate_summary(df: pd.DataFrame) -> str:
-    desc = df.describe(include='all').to_string()
-    prompt = f"Summarize the following spreadsheet data:\n\n{desc}"
-
     try:
-        response = client.chat.completions.create(
+        desc = df.describe(include="all").to_string()
+        prompt = (
+            "You are a data analyst. Given the descriptive statistics below from an Excel sheet, "
+            "provide a concise and insightful summary. Focus on trends, outliers, and interesting facts.\n\n"
+            f"Descriptive statistics:\n{desc}"
+        )
+
+        response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful data analyst."},
@@ -59,6 +88,8 @@ def generate_summary(df: pd.DataFrame) -> str:
             ],
             max_tokens=300,
         )
-        return response.choices[0].message.content
+        return response["choices"][0]["message"]["content"]
     except Exception as e:
+        logger.error(f"OpenAI API error: {e}")
         return f"OpenAI API error: {e}"
+

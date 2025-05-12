@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "autoprefixer": "^10.4.21",
     "axios": "^1.6.0",
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
