@@ -11,7 +11,6 @@ import {
 
 function App() {
   const [uploads, setUploads] = useState([]);
-
   const fileInputRef = useRef(null);
 
   const handleUpload = async (e) => {
@@ -31,8 +30,70 @@ function App() {
 
     const data = response.data;
 
+    if (data.multiple_sheets) {
+      const confirmSplit = window.confirm(
+        `This file contains multiple sheets:\n${data.sheets.join(
+          ", "
+        )}\n\nWould you like to treat each sheet as a separate upload?`
+      );
+
+      if (confirmSplit) {
+        for (const sheetName of data.sheets) {
+          const sheetForm = new FormData();
+          sheetForm.append("file", file);
+          sheetForm.append("sheet_name", sheetName);
+
+          const sheetRes = await axios.post(
+            "http://localhost:8000/process-sheet",
+            sheetForm
+          );
+
+          const upload = {
+            id: Date.now() + Math.random(),
+            fileName: `${file.name} - ${sheetName}`,
+            summary: sheetRes.data.summary,
+            chartData: sheetRes.data.chart_data,
+            columns: sheetRes.data.columns,
+            rows: sheetRes.data.rows,
+            showSummary: false,
+            showChart: false,
+          };
+
+          setUploads((prev) => [...prev, upload]);
+        }
+      } else {
+        // Optionally: default to first sheet only
+        const firstSheet = data.sheets[0];
+        const sheetForm = new FormData();
+        sheetForm.append("file", file);
+        sheetForm.append("sheet_name", firstSheet);
+
+        const sheetRes = await axios.post(
+          "http://localhost:8000/process-sheet",
+          sheetForm
+        );
+
+        const upload = {
+          id: Date.now(),
+          fileName: `${file.name} - ${firstSheet}`,
+          summary: sheetRes.data.summary,
+          chartData: sheetRes.data.chart_data,
+          columns: sheetRes.data.columns,
+          rows: sheetRes.data.rows,
+          showSummary: false,
+          showChart: false,
+        };
+
+        setUploads((prev) => [...prev, upload]);
+      }
+
+      fileInputRef.current.value = null;
+      return;
+    }
+
+    // Handle single sheet
     const newUpload = {
-      id: Date.now(), // unique id
+      id: Date.now(),
       fileName: file.name,
       summary: data.summary,
       chartData: data.chart_data,
@@ -133,7 +194,6 @@ function App() {
             <div className="flex flex-col sm:flex-row gap-2 mt-4">
               <button
                 onClick={() => toggleSummary(upload.id)}
-                Ok
                 className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
               >
                 {upload.showSummary ? "Hide Summary" : "Show Summary"}
@@ -144,7 +204,6 @@ function App() {
               >
                 {upload.showChart ? "Hide Chart" : "Show Chart"}
               </button>
-
               <button
                 onClick={() => removeUpload(upload.id)}
                 className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
@@ -159,20 +218,18 @@ function App() {
               </div>
             )}
 
-            {upload.showChart &&
-              upload.chartData &&
-              upload.chartData.length > 0 && (
-                <div className="mt-6">
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={upload.chartData}>
-                      <XAxis dataKey="label" />
-                      <YAxis />
-                      <Tooltip />
-                      <Bar dataKey="value" fill="#4f46e5" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+            {upload.showChart && upload.chartData.length > 0 && (
+              <div className="mt-6">
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={upload.chartData}>
+                    <XAxis dataKey="label" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#4f46e5" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
         ))}
       </div>
