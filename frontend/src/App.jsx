@@ -163,32 +163,34 @@ function App() {
           <div key={upload.id} className="bg-white p-6 rounded-2xl shadow-md">
             <h2 className="text-lg font-semibold mb-4">{upload.fileName}</h2>
 
-            <div className="overflow-auto mb-4">
-              <table className="min-w-full border text-sm">
-                <thead>
-                  <tr className="bg-slate-100">
-                    {upload.columns.map((col, i) => (
-                      <th
-                        key={i}
-                        className="text-left p-2 border-b font-semibold"
-                      >
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {upload.rows.map((row, i) => (
-                    <tr key={i}>
-                      {row.map((val, j) => (
-                        <td key={j} className="p-2 border-b">
-                          {val}
-                        </td>
+            <div className="mb-4 border rounded">
+              <div className="overflow-y-auto max-h-64">
+                <table className="min-w-full text-sm border-collapse">
+                  <thead className="sticky top-0 bg-slate-100">
+                    <tr>
+                      {upload.columns.map((col, i) => (
+                        <th
+                          key={i}
+                          className="text-left p-2 border-b font-semibold"
+                        >
+                          {col}
+                        </th>
                       ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {upload.rows.map((row, i) => (
+                      <tr key={i}>
+                        {row.map((val, j) => (
+                          <td key={j} className="p-2 border-b">
+                            {val}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 mt-4">
@@ -238,3 +240,4 @@ function App() {
 }
 
 export default App;
+

@@ -27,12 +27,58 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class ProcessHeaderRequest(BaseModel):
+    sheet_name: str
+    header_row_index: int
+
 class UploadResponse(BaseModel):
     summary: str
     chart_data: List[Dict[str, str]]
     columns: List[str]
     rows: List[List[str]]
 
+class SheetPreview(BaseModel):
+    sheet_name: str
+    preview_rows: List[List[str]]
+    suggested_header_row_index: int | None
+
+@app.post("/process-sheet-with-header", response_model=UploadResponse)
+async def process_with_custom_header(
+    file: UploadFile = File(...),
+    sheet_name: str = Form(...),
+    header_row_index: int = Form(...)
+):
+    try:
+        content = await file.read()
+        df = pd.read_excel(io.BytesIO(content), sheet_name=sheet_name, header=header_row_index)
+        return build_response(df)
+    except Exception as e:
+        logger.error(f"Error processing with custom header: {e}")
+        raise HTTPException(status_code=500, detail=f"Error processing with custom header: {e}")
+
+@app.post("/preview-sheet-rows", response_model=SheetPreview)
+async def preview_sheet_rows(file: UploadFile = File(...), sheet_name: str = Form(...)):
+    try:
+        content = await file.read()
+        xls = pd.ExcelFile(io.BytesIO(content))
+
+        if sheet_name not in xls.sheet_names:
+            raise HTTPException(status_code=400, detail="Invalid sheet name.")
+
+        df_preview = pd.read_excel(xls, sheet_name=sheet_name, header=None, nrows=10)
+        preview_rows = df_preview.fillna("").astype(str).values.tolist()
+
+        suggested_index = await suggest_header_row_with_ai(preview_rows)
+
+        return {
+            "sheet_name": sheet_name,
+            "preview_rows": preview_rows,
+            "suggested_header_row_index": suggested_index
+        }
+
+    except Exception as e:
+        logger.error(f"Error previewing sheet: {e}")
+        raise HTTPException(status_code=500, detail=f"Error previewing sheet: {e}")
 
 @app.post("/upload")
 async def upload_excel(file: UploadFile = File(...)):
@@ -118,5 +164,34 @@ def generate_summary(df: pd.DataFrame) -> str:
     except Exception as e:
         logger.error(f"OpenAI API error: {e}")
         return f"OpenAI API error: {e}"
+    
+    
+async def suggest_header_row_with_ai(preview_rows: List[List[str]]) -> int | None:
+    try:
+        table_preview = "\n".join(
+            f"Row {i}: {row}" for i, row in enumerate(preview_rows)
+        )
 
+        prompt = (
+            "Here is a preview of the top rows from a spreadsheet. "
+            "Which row (0-indexed) most likely contains column headers?\n\n"
+            f"{table_preview}\n\n"
+            "Respond with only the row number."
+        )
+
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert in spreadsheet data cleaning."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=10,
+        )
+
+        answer = response["choices"][0]["message"]["content"].strip()
+        return int(answer) if answer.isdigit() else None
+
+    except Exception as e:
+        logger.warning(f"AI header row suggestion failed: {e}")
+        return None
 
