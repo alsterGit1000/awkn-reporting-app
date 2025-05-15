@@ -50,8 +50,7 @@ function App() {
       chartData: data.chart_data,
       columns: data.columns,
       rows: data.rows,
-      showSummary: false,
-      showChart: false,
+
     };
 
     setUploads((prev) => [...prev, newUpload]);
@@ -76,32 +75,13 @@ function App() {
         chartData: sheetRes.data.chart_data,
         columns: sheetRes.data.columns,
         rows: sheetRes.data.rows,
-        showSummary: false,
-        showChart: false,
+   
       };
 
       setUploads((prev) => [...prev, upload]);
     }
     setSheetSelection([]); // Reset the selection after submission
     fileInputRef.current.value = null;
-  };
-
-  const toggleSummary = (id) => {
-    setUploads((prevUploads) =>
-      prevUploads.map((upload) =>
-        upload.id === id
-          ? { ...upload, showSummary: !upload.showSummary }
-          : upload
-      )
-    );
-  };
-
-  const toggleChart = (id) => {
-    setUploads((prevUploads) =>
-      prevUploads.map((upload) =>
-        upload.id === id ? { ...upload, showChart: !upload.showChart } : upload
-      )
-    );
   };
 
   const removeUpload = () => {
@@ -233,45 +213,14 @@ function App() {
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2 mt-4">
+            <div className="mt-4">
               <button
-                onClick={() => toggleSummary(upload.id)}
-                className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
-              >
-                {upload.showSummary ? "Hide Summary" : "Show Summary"}
-              </button>
-              <button
-                onClick={() => toggleChart(upload.id)}
-                className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700"
-              >
-                {upload.showChart ? "Hide Chart" : "Show Chart"}
-              </button>
-              <button
-                onClick={() => openRemoveDialog(upload)}
+                onClick={() => removeUpload(upload.id)}
                 className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
               >
                 Remove
               </button>
             </div>
-
-            {upload.showSummary && (
-              <div className="mt-4 whitespace-pre-line text-sm text-gray-700">
-                {upload.summary}
-              </div>
-            )}
-
-            {upload.showChart && upload.chartData.length > 0 && (
-              <div className="mt-6">
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={upload.chartData}>
-                    <XAxis dataKey="label" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#4f46e5" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
           </div>
         ))}
 
