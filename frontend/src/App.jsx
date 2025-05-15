@@ -11,7 +11,12 @@ import {
 
 function App() {
   const [uploads, setUploads] = useState([]);
+  const [isConfirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [sheetToRemove, setSheetToRemove] = useState(null);
+  const [sheetSelection, setSheetSelection] = useState([]);
   const fileInputRef = useRef(null);
+
+  const [allSheetNames, setAllSheetNames] = useState([]);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
@@ -31,67 +36,13 @@ function App() {
     const data = response.data;
 
     if (data.multiple_sheets) {
-      const confirmSplit = window.confirm(
-        `This file contains multiple sheets:\n${data.sheets.join(
-          ", "
-        )}\n\nWould you like to treat each sheet as a separate upload?`
-      );
+      setAllSheetNames(data.sheets);
+      setSheetSelection(data.sheets); // Populating sheet selection dialog
 
-      if (confirmSplit) {
-        for (const sheetName of data.sheets) {
-          const sheetForm = new FormData();
-          sheetForm.append("file", file);
-          sheetForm.append("sheet_name", sheetName);
-
-          const sheetRes = await axios.post(
-            "http://localhost:8000/process-sheet",
-            sheetForm
-          );
-
-          const upload = {
-            id: Date.now() + Math.random(),
-            fileName: `${file.name} - ${sheetName}`,
-            summary: sheetRes.data.summary,
-            chartData: sheetRes.data.chart_data,
-            columns: sheetRes.data.columns,
-            rows: sheetRes.data.rows,
-            showSummary: false,
-            showChart: false,
-          };
-
-          setUploads((prev) => [...prev, upload]);
-        }
-      } else {
-        // Optionally: default to first sheet only
-        const firstSheet = data.sheets[0];
-        const sheetForm = new FormData();
-        sheetForm.append("file", file);
-        sheetForm.append("sheet_name", firstSheet);
-
-        const sheetRes = await axios.post(
-          "http://localhost:8000/process-sheet",
-          sheetForm
-        );
-
-        const upload = {
-          id: Date.now(),
-          fileName: `${file.name} - ${firstSheet}`,
-          summary: sheetRes.data.summary,
-          chartData: sheetRes.data.chart_data,
-          columns: sheetRes.data.columns,
-          rows: sheetRes.data.rows,
-          showSummary: false,
-          showChart: false,
-        };
-
-        setUploads((prev) => [...prev, upload]);
-      }
-
-      fileInputRef.current.value = null;
-      return;
+      // Show worksheet selection modal (styled similar to the page)
+      return; // Prevent further code execution for now
     }
 
-    // Handle single sheet
     const newUpload = {
       id: Date.now(),
       fileName: file.name,
@@ -104,6 +55,34 @@ function App() {
     };
 
     setUploads((prev) => [...prev, newUpload]);
+    fileInputRef.current.value = null;
+  };
+
+  const handleSheetSelection = async () => {
+    for (const sheetName of sheetSelection) {
+      const sheetForm = new FormData();
+      sheetForm.append("file", fileInputRef.current.files[0]); // Using uploaded file
+      sheetForm.append("sheet_name", sheetName);
+
+      const sheetRes = await axios.post(
+        "http://localhost:8000/process-sheet",
+        sheetForm
+      );
+
+      const upload = {
+        id: Date.now() + Math.random(),
+        fileName: `${fileInputRef.current.files[0].name} - ${sheetName}`,
+        summary: sheetRes.data.summary,
+        chartData: sheetRes.data.chart_data,
+        columns: sheetRes.data.columns,
+        rows: sheetRes.data.rows,
+        showSummary: false,
+        showChart: false,
+      };
+
+      setUploads((prev) => [...prev, upload]);
+    }
+    setSheetSelection([]); // Reset the selection after submission
     fileInputRef.current.value = null;
   };
 
@@ -125,13 +104,20 @@ function App() {
     );
   };
 
-  const removeUpload = (id) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to remove this spreadsheet?"
+  const removeUpload = () => {
+    setUploads((prev) =>
+      prev.filter((upload) => upload.id !== sheetToRemove.id)
     );
-    if (confirmDelete) {
-      setUploads((prev) => prev.filter((upload) => upload.id !== id));
-    }
+    setConfirmDialogOpen(false);
+  };
+
+  const openRemoveDialog = (upload) => {
+    setSheetToRemove(upload);
+    setConfirmDialogOpen(true);
+  };
+
+  const closeRemoveDialog = () => {
+    setConfirmDialogOpen(false);
   };
 
   return (
@@ -158,6 +144,60 @@ function App() {
             className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-white file:bg-indigo-600 hover:file:bg-indigo-700"
           />
         </div>
+
+        {/* Worksheet Selection Modal */}
+        {sheetSelection.length > 0 && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full">
+              <h2 className="text-xl font-semibold mb-4">Select Worksheets</h2>
+              <p>Select the worksheets you want to keep:</p>
+              <div className="mt-4">
+                {allSheetNames.map((sheet, index) => {
+                  const isSelected = sheetSelection.includes(sheet);
+                  return (
+                    <div key={index} className="mb-2">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setSheetSelection((prev) =>
+                              isSelected
+                                ? prev.filter((s) => s !== sheet)
+                                : [...prev, sheet]
+                            );
+                          }}
+                          className="mr-2"
+                        />
+                        <span
+                          className={
+                            isSelected ? "text-gray-800" : "text-gray-400"
+                          }
+                        >
+                          {sheet}
+                        </span>
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-end gap-4 mt-4">
+                <button
+                  onClick={() => setSheetSelection([])} // Close without selection
+                  className="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSheetSelection} // Handle the selected sheets
+                  className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {uploads.map((upload) => (
           <div key={upload.id} className="bg-white p-6 rounded-2xl shadow-md">
@@ -207,7 +247,7 @@ function App() {
                 {upload.showChart ? "Hide Chart" : "Show Chart"}
               </button>
               <button
-                onClick={() => removeUpload(upload.id)}
+                onClick={() => openRemoveDialog(upload)}
                 className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
               >
                 Remove
@@ -234,10 +274,36 @@ function App() {
             )}
           </div>
         ))}
+
+        {/* Confirmation Dialog */}
+        {isConfirmDialogOpen && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center z-50">
+            <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full">
+              <h2 className="text-xl font-semibold mb-4">Confirm Removal</h2>
+              <p>
+                Are you sure you want to remove the sheet "
+                {sheetToRemove?.fileName}"?
+              </p>
+              <div className="flex justify-end gap-4 mt-4">
+                <button
+                  onClick={closeRemoveDialog}
+                  className="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={removeUpload}
+                  className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
 export default App;
-
