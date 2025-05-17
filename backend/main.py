@@ -1,22 +1,15 @@
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Dict
 import pandas as pd
 import io
-import os
-import openai
 import logging
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv(dotenv_path="awkn_openai_key.env")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 app = FastAPI()
 
@@ -103,7 +96,6 @@ async def upload_excel(file: UploadFile = File(...)):
         logger.error(f"Error processing file: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing file: {e}")
 
-
 @app.post("/process-sheet", response_model=UploadResponse)
 async def process_specific_sheet(
     file: UploadFile = File(...), sheet_name: str = Form(...)
@@ -122,10 +114,9 @@ async def process_specific_sheet(
         logger.error(f"Error processing sheet: {e}")
         raise HTTPException(status_code=500, detail=f"Error processing sheet: {e}")
 
-
 def build_response(df: pd.DataFrame) -> UploadResponse:
-    summary = generate_summary(df)
-    columns = df.columns.tolist()
+    summary = "(summary disabled)"
+    columns = [str(col) for col in df.columns.tolist()]
     rows = df.fillna("").astype(str).values.tolist()
 
     if len(columns) >= 2:
@@ -142,56 +133,9 @@ def build_response(df: pd.DataFrame) -> UploadResponse:
         rows=rows,
     )
 
-
-def generate_summary(df: pd.DataFrame) -> str:
-    try:
-        desc = df.describe(include="all").to_string()
-        prompt = (
-            "You are a data analyst. Given the descriptive statistics below from an Excel sheet, "
-            "provide a concise and insightful summary. Focus on trends, outliers, and interesting facts.\n\n"
-            f"Descriptive statistics:\n{desc}"
-        )
-
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful data analyst."},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=300,
-        )
-        return response["choices"][0]["message"]["content"]
-    except Exception as e:
-        logger.error(f"OpenAI API error: {e}")
-        return f"OpenAI API error: {e}"
-    
-    
 async def suggest_header_row_with_ai(preview_rows: List[List[str]]) -> int | None:
-    try:
-        table_preview = "\n".join(
-            f"Row {i}: {row}" for i, row in enumerate(preview_rows)
-        )
-
-        prompt = (
-            "Here is a preview of the top rows from a spreadsheet. "
-            "Which row (0-indexed) most likely contains column headers?\n\n"
-            f"{table_preview}\n\n"
-            "Respond with only the row number."
-        )
-
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are an expert in spreadsheet data cleaning."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=10,
-        )
-
-        answer = response["choices"][0]["message"]["content"].strip()
-        return int(answer) if answer.isdigit() else None
-
-    except Exception as e:
-        logger.warning(f"AI header row suggestion failed: {e}")
-        return None
-
+    # Heuristic fallback: choose first row with more than half non-empty values
+    for i, row in enumerate(preview_rows):
+        if sum(1 for cell in row if cell.strip()) > len(row) // 2:
+            return i
+    return 0
