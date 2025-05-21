@@ -1,84 +1,137 @@
-// components/WorksheetPreviewModal.jsx
-import React from "react";
+import React, { useState, useRef } from "react";
+import { HotTable } from "@handsontable/react";
+import Handsontable from "handsontable";
+import "handsontable/dist/handsontable.full.min.css";
 
-const WorksheetPreviewModal = ({ previews, onClose, onConfirmUpload }) => {
+function WorksheetPreviewModal({ previews, onClose, onConfirmUpload }) {
+  const preview = previews[0];
+  const [data, setData] = useState(preview.preview_rows);
+  const [selectedHeaderRow, setSelectedHeaderRow] = useState(null);
+
+  const hotRef = useRef(null);
+
+  const handleContextMenu = (event, coords) => {
+    if (coords?.row >= 0) {
+      setSelectedHeaderRow(coords.row);
+    }
+  };
+
+  const handleBeforeRemoveRow = (index, amount) => {
+    if (selectedHeaderRow >= index) {
+      setSelectedHeaderRow((prev) => Math.max(0, prev - amount));
+    }
+  };
+
+  const handleAfterRemoveRow = () => {
+    // Handsontable manages row removal internally; no manual state update needed.
+  };
+
+  const handleAfterRemoveCol = () => {
+    // Handsontable manages column removal internally; no manual state update needed.
+  };
+
+  const handleUpload = () => {
+    onConfirmUpload(preview.sheet_name, selectedHeaderRow);
+  };
+
   return (
-    <div className="fixed inset-0 bg-gray-700 bg-opacity-50 flex justify-center items-center z-50 overflow-auto">
-      <div className="bg-white p-6 rounded-lg shadow-lg max-w-4xl w-full space-y-6">
-        <h2 className="text-xl font-bold text-gray-800">Worksheet Preview</h2>
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-xl p-6 max-w-6xl w-full max-h-[90vh] shadow-xl space-y-4 relative overflow-hidden">
+        <h2 className="text-xl font-bold">
+          Edit Worksheet: {preview.sheet_name}
+        </h2>
 
-        {previews.map((sheet, idx) => (
-          <div key={idx} className="border p-4 rounded-lg bg-slate-50 shadow-sm">
-            <h3 className="font-semibold mb-2">{sheet.sheet_name}</h3>
-            <p className="mb-2 text-sm text-gray-600">
-              AI suggested header row:{" "}
-              <strong>Row {sheet.suggested_header_row_index}</strong>
-            </p>
+        <div className="text-sm text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md p-3 leading-relaxed">
+          <p>
+            1. Click on a row number to select a row, or a column letter to
+            select a column.
+          </p>
+          <p>
+            2. Right click to take row or column actions such as insert or
+            delete.
+          </p>
+          <p>3. Column header row is indicated in light green.</p>
+        </div>
 
-            <div className="overflow-auto max-h-60">
-              <table className="min-w-full text-sm border border-gray-300">
-                <tbody>
-                  {sheet.preview_rows.map((row, rowIdx) => (
-                    <tr
-                      key={rowIdx}
-                      className={
-                        rowIdx === sheet.suggested_header_row_index
-                          ? "bg-yellow-100"
-                          : ""
-                      }
-                    >
-                      {row.map((cell, colIdx) => (
-                        <td
-                          key={colIdx}
-                          className="border px-2 py-1 text-gray-700"
-                        >
-                          {cell}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <div
+          className="border rounded overflow-hidden"
+          style={{ height: "400px" }}
+        >
+          <HotTable
+            data={data}
+            colHeaders={(index) => String.fromCharCode(65 + index)}
+            rowHeaders={true}
+            height="400px"
+            width="100%"
+            contextMenu={{
+              items: {
+                row_above: {},
+                row_below: {},
+                remove_row: {},
+                col_left: {},
+                col_right: {},
+                remove_col: {},
+                copy: {},
+                cut: {},
+                set_header_row: {
+                  name: "Set Row as Column Headings",
+                  callback: function (_, selection) {
+                    if (selection?.length) {
+                      const row = selection[0].start.row;
+                      setSelectedHeaderRow(row);
+                    }
+                  },
+                },
+              },
+            }}
+            manualRowResize={true}
+            manualColumnResize={true}
+            fixedRowsTop={selectedHeaderRow + 1}
+            afterRemoveCol={handleAfterRemoveCol}
+            afterRemoveRow={handleAfterRemoveRow}
+            cells={(row, col) => {
+              const cellProperties = {};
+              if (row === selectedHeaderRow) {
+                cellProperties.renderer = (instance, td, ...rest) => {
+                  Handsontable.renderers.TextRenderer(instance, td, ...rest);
+                  td.style.background = "#dcfce7"; // Light green (Tailwind's bg-green-100)
+                  td.style.fontWeight = "bold";
+                };
+              }
+              return cellProperties;
+            }}
+            licenseKey="non-commercial-and-evaluation"
+          />
+        </div>
 
-            <div className="mt-4 flex items-center gap-2">
-              <label className="text-sm">
-                Choose header row:
-                <input
-                  type="number"
-                  min={0}
-                  max={sheet.preview_rows.length - 1}
-                  value={sheet.selected_header_row}
-                  onChange={(e) =>
-                    sheet.setSelectedHeaderRow(Number(e.target.value))
-                  }
-                  className="ml-2 w-16 border px-2 py-1 rounded"
-                />
-              </label>
-
-              <button
-                onClick={() =>
-                  onConfirmUpload(sheet.sheet_name, sheet.selected_header_row)
-                }
-                className="ml-auto bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
-              >
-                Upload This Worksheet
-              </button>
-            </div>
-          </div>
-        ))}
-
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-4 pt-4">
           <button
             onClick={onClose}
-            className="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500"
+            className="bg-gray-300 text-gray-800 px-4 py-2 rounded hover:bg-gray-400"
           >
             Cancel
+          </button>
+          {selectedHeaderRow !== 0 && (
+            <p className="text-sm text-red-600">
+              Please set the top row (row 1) as the column header before
+              uploading.
+            </p>
+          )}
+          <button
+            onClick={handleUpload}
+            disabled={selectedHeaderRow !== 0}
+            className={`px-4 py-2 rounded text-white ${
+              selectedHeaderRow === 0
+                ? "bg-green-600 hover:bg-green-700"
+                : "bg-gray-400 cursor-not-allowed"
+            }`}
+          >
+            Upload This Worksheet
           </button>
         </div>
       </div>
     </div>
   );
-};
+}
 
 export default WorksheetPreviewModal;

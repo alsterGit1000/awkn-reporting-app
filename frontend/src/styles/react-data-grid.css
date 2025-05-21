@@ -1,0 +1,13 @@
+.rdg {
+  font-size: 0.875rem; /* Tailwind text-sm */
+  background-color: white;
+}
+
+.rdg .rdg-cell {
+  padding: 0.25rem 0.5rem;
+}
+
+.rdg .rdg-header-row {
+  background-color: #f1f5f9; /* Tailwind slate-100 */
+  font-weight: 600;
+}

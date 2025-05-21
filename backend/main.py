@@ -58,7 +58,8 @@ async def preview_sheet_rows(file: UploadFile = File(...), sheet_name: str = For
         if sheet_name not in xls.sheet_names:
             raise HTTPException(status_code=400, detail="Invalid sheet name.")
 
-        df_preview = pd.read_excel(xls, sheet_name=sheet_name, header=None, nrows=10)
+        df_preview = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+
         preview_rows = df_preview.fillna("").astype(str).values.tolist()
 
         suggested_index = await suggest_header_row_with_ai(preview_rows)
