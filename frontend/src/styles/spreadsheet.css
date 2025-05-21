@@ -1,0 +1,4 @@
+.custom-sheet .Spreadsheet__cell--selected {
+  background-color: #fef3c7; /* light yellow */
+  font-weight: bold;
+}

@@ -1,123 +1,112 @@
 import React, { useState, useRef } from "react";
 import axios from "axios";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import WorksheetPreviewModal from "./components/WorksheetPreviewModal";
+import WorksheetUploadPrompt from "./components/WorksheetUploadPrompt";
+
 
 function App() {
   const [uploads, setUploads] = useState([]);
-  const [isConfirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [sheetToRemove, setSheetToRemove] = useState(null);
-  const [sheetSelection, setSheetSelection] = useState([]);
+  const [pendingPreviews, setPendingPreviews] = useState([]);
+  const [fileForPreview, setFileForPreview] = useState(null);
+  const [sheetInEdit, setSheetInEdit] = useState(null);
   const fileInputRef = useRef(null);
-
-  const [allSheetNames, setAllSheetNames] = useState([]);
 
   const handleUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append("file", file);
+    const fileContent = new FormData();
+    fileContent.append("file", file);
 
-    const response = await axios.post(
+    const uploadRes = await axios.post(
       "http://localhost:8000/upload",
-      formData,
-      {
-        headers: { "Content-Type": "multipart/form-data" },
-      }
+      fileContent,
+      { headers: { "Content-Type": "multipart/form-data" } }
     );
 
-    const data = response.data;
+    const { sheets } = uploadRes.data.multiple_sheets
+      ? uploadRes.data
+      : { sheets: [uploadRes.data.columns ? "Sheet1" : "Sheet"] };
 
-    if (data.multiple_sheets) {
-      setAllSheetNames(data.sheets);
-      setSheetSelection(data.sheets); // Populating sheet selection dialog
+    const previews = [];
 
-      // Show worksheet selection modal (styled similar to the page)
-      return; // Prevent further code execution for now
-    }
+    for (const sheetName of sheets) {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("sheet_name", sheetName);
 
-    const newUpload = {
-      id: Date.now(),
-      fileName: file.name,
-      summary: data.summary,
-      chartData: data.chart_data,
-      columns: data.columns,
-      rows: data.rows,
-      showSummary: false,
-      showChart: false,
-    };
-
-    setUploads((prev) => [...prev, newUpload]);
-    fileInputRef.current.value = null;
-  };
-
-  const handleSheetSelection = async () => {
-    for (const sheetName of sheetSelection) {
-      const sheetForm = new FormData();
-      sheetForm.append("file", fileInputRef.current.files[0]); // Using uploaded file
-      sheetForm.append("sheet_name", sheetName);
-
-      const sheetRes = await axios.post(
-        "http://localhost:8000/process-sheet",
-        sheetForm
+      const previewRes = await axios.post(
+        "http://localhost:8000/preview-sheet-rows",
+        form,
+        { headers: { "Content-Type": "multipart/form-data" } }
       );
 
-      const upload = {
-        id: Date.now() + Math.random(),
-        fileName: `${fileInputRef.current.files[0].name} - ${sheetName}`,
-        summary: sheetRes.data.summary,
-        chartData: sheetRes.data.chart_data,
-        columns: sheetRes.data.columns,
-        rows: sheetRes.data.rows,
-        showSummary: false,
-        showChart: false,
-      };
-
-      setUploads((prev) => [...prev, upload]);
+      previews.push({
+        sheet_name: sheetName,
+        ...previewRes.data,
+        selected_header_row: previewRes.data.suggested_header_row_index || 0,
+        setSelectedHeaderRow: (val) =>
+          setPendingPreviews((prev) =>
+            prev.map((s) =>
+              s.sheet_name === sheetName
+                ? { ...s, selected_header_row: val }
+                : s
+            )
+          ),
+      });
     }
-    setSheetSelection([]); // Reset the selection after submission
-    fileInputRef.current.value = null;
+
+    setFileForPreview(file);
+    setPendingPreviews(previews);
+    fileInputRef.current.value = null; // ✅ Allows re-selecting same file later
   };
 
-  const toggleSummary = (id) => {
-    setUploads((prevUploads) =>
-      prevUploads.map((upload) =>
-        upload.id === id
-          ? { ...upload, showSummary: !upload.showSummary }
-          : upload
-      )
+  const handleConfirmUpload = async (sheetName, headerRowIndex) => {
+    const form = new FormData();
+    form.append("file", fileForPreview);
+    form.append("sheet_name", sheetName);
+    form.append("header_row_index", headerRowIndex);
+
+    const res = await axios.post(
+      "http://localhost:8000/process-sheet-with-header",
+      form,
+      { headers: { "Content-Type": "multipart/form-data" } }
     );
-  };
 
-  const toggleChart = (id) => {
-    setUploads((prevUploads) =>
-      prevUploads.map((upload) =>
-        upload.id === id ? { ...upload, showChart: !upload.showChart } : upload
-      )
+    const upload = {
+      id: Date.now() + Math.random(),
+      fileName: `${fileForPreview.name} - ${sheetName}`,
+      summary: res.data.summary,
+      chartData: res.data.chart_data,
+      columns: res.data.columns,
+      rows: res.data.rows,
+    };
+
+    setUploads((prev) => [...prev, upload]);
+
+    // Remove the processed preview
+    setPendingPreviews((prev) =>
+      prev.filter((p) => p.sheet_name !== sheetName)
     );
+
+    setSheetInEdit(null);
   };
 
-  const removeUpload = () => {
-    setUploads((prev) =>
-      prev.filter((upload) => upload.id !== sheetToRemove.id)
+  const handleEdit = (sheetName) => {
+    const preview = pendingPreviews.find((s) => s.sheet_name === sheetName);
+    if (preview) {
+      setSheetInEdit(preview);
+    }
+  };
+
+  const removeUpload = (uploadId) => {
+    setUploads((prev) => prev.filter((upload) => upload.id !== uploadId));
+  };
+
+  const removePendingSheet = (sheetName) => {
+    setPendingPreviews((prev) =>
+      prev.filter((sheet) => sheet.sheet_name && sheet.sheet_name !== sheetName)
     );
-    setConfirmDialogOpen(false);
-  };
-
-  const openRemoveDialog = (upload) => {
-    setSheetToRemove(upload);
-    setConfirmDialogOpen(true);
-  };
-
-  const closeRemoveDialog = () => {
-    setConfirmDialogOpen(false);
   };
 
   return (
@@ -136,170 +125,111 @@ function App() {
           <label className="block text-sm font-medium mb-2">
             + Add Excel File
           </label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx"
-            onChange={handleUpload}
-            className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-white file:bg-indigo-600 hover:file:bg-indigo-700"
-          />
+          <div className="flex items-center gap-4">
+            <label className="relative inline-block">
+              <span
+                className={`block cursor-pointer text-sm font-medium px-4 py-2 rounded-md ${
+                  pendingPreviews.length > 0
+                    ? "bg-indigo-300 text-white cursor-not-allowed"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                }`}
+              >
+                + Choose Excel File
+              </span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx"
+                onChange={handleUpload}
+                disabled={pendingPreviews.length > 0}
+                className="absolute inset-0 opacity-0 cursor-pointer"
+              />
+            </label>
+
+            {pendingPreviews.length > 0 && fileForPreview && (
+              <span className="text-sm text-gray-500 italic">
+                Finish processing: <strong>{fileForPreview.name}</strong>
+              </span>
+            )}
+          </div>
+          {pendingPreviews.length > 0 && (
+            <div className="space-y-4 mt-8">
+              <h2 className="text-2xl font-bold text-indigo-600">
+                Pending Uploads
+              </h2>
+              <WorksheetUploadPrompt
+                previews={pendingPreviews}
+                onEdit={handleEdit}
+                onUpload={handleConfirmUpload}
+                onRemove={removePendingSheet}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Worksheet Selection Modal */}
-        {sheetSelection.length > 0 && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full">
-              <h2 className="text-xl font-semibold mb-4">Select Worksheets</h2>
-              <p>Select the worksheets you want to keep:</p>
-              <div className="mt-4">
-                {allSheetNames.map((sheet, index) => {
-                  const isSelected = sheetSelection.includes(sheet);
-                  return (
-                    <div key={index} className="mb-2">
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => {
-                            setSheetSelection((prev) =>
-                              isSelected
-                                ? prev.filter((s) => s !== sheet)
-                                : [...prev, sheet]
-                            );
-                          }}
-                          className="mr-2"
-                        />
-                        <span
-                          className={
-                            isSelected ? "text-gray-800" : "text-gray-400"
-                          }
-                        >
-                          {sheet}
-                        </span>
-                      </label>
-                    </div>
-                  );
-                })}
+        {uploads.length > 0 && (
+          <div className="space-y-4 mt-12">
+            <h2 className="text-2xl font-bold text-green-700">
+              Uploaded Worksheets
+            </h2>
+            {/* Uploaded Sheet Display */}
+            {uploads.map((upload) => (
+              <div
+                key={upload.id}
+                className="bg-white p-6 rounded-2xl shadow-md"
+              >
+                <h2 className="text-lg font-semibold mb-4">
+                  {upload.fileName}
+                </h2>
+
+                <div className="mb-4 border rounded overflow-y-auto max-h-64">
+                  <table className="min-w-full text-sm border-collapse">
+                    <thead className="sticky top-0 bg-slate-100">
+                      <tr>
+                        {upload.columns.map((col, i) => (
+                          <th
+                            key={i}
+                            className="text-left p-2 border-b font-semibold"
+                          >
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {upload.rows.map((row, i) => (
+                        <tr key={i}>
+                          {row.map((val, j) => (
+                            <td key={j} className="p-2 border-b">
+                              {val}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="mt-4">
+                  <button
+                    onClick={() => removeUpload(upload.id)}
+                    className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
-              <div className="flex justify-end gap-4 mt-4">
-                <button
-                  onClick={() => setSheetSelection([])} // Close without selection
-                  className="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSheetSelection} // Handle the selected sheets
-                  className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
-                >
-                  Confirm
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
         )}
 
-        {uploads.map((upload) => (
-          <div key={upload.id} className="bg-white p-6 rounded-2xl shadow-md">
-            <h2 className="text-lg font-semibold mb-4">{upload.fileName}</h2>
-
-            <div className="mb-4 border rounded">
-              <div className="overflow-y-auto max-h-64">
-                <table className="min-w-full text-sm border-collapse">
-                  <thead className="sticky top-0 bg-slate-100">
-                    <tr>
-                      {upload.columns.map((col, i) => (
-                        <th
-                          key={i}
-                          className="text-left p-2 border-b font-semibold"
-                        >
-                          {col}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {upload.rows.map((row, i) => (
-                      <tr key={i}>
-                        {row.map((val, j) => (
-                          <td key={j} className="p-2 border-b">
-                            {val}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-2 mt-4">
-              <button
-                onClick={() => toggleSummary(upload.id)}
-                className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
-              >
-                {upload.showSummary ? "Hide Summary" : "Show Summary"}
-              </button>
-              <button
-                onClick={() => toggleChart(upload.id)}
-                className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700"
-              >
-                {upload.showChart ? "Hide Chart" : "Show Chart"}
-              </button>
-              <button
-                onClick={() => openRemoveDialog(upload)}
-                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-              >
-                Remove
-              </button>
-            </div>
-
-            {upload.showSummary && (
-              <div className="mt-4 whitespace-pre-line text-sm text-gray-700">
-                {upload.summary}
-              </div>
-            )}
-
-            {upload.showChart && upload.chartData.length > 0 && (
-              <div className="mt-6">
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={upload.chartData}>
-                    <XAxis dataKey="label" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#4f46e5" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        ))}
-
-        {/* Confirmation Dialog */}
-        {isConfirmDialogOpen && (
-          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex justify-center items-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full">
-              <h2 className="text-xl font-semibold mb-4">Confirm Removal</h2>
-              <p>
-                Are you sure you want to remove the sheet "
-                {sheetToRemove?.fileName}"?
-              </p>
-              <div className="flex justify-end gap-4 mt-4">
-                <button
-                  onClick={closeRemoveDialog}
-                  className="bg-gray-400 text-white px-4 py-2 rounded hover:bg-gray-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={removeUpload}
-                  className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          </div>
+        {/* Edit Modal */}
+        {sheetInEdit && (
+          <WorksheetPreviewModal
+            previews={[sheetInEdit]}
+            onClose={() => setSheetInEdit(null)}
+            onConfirmUpload={handleConfirmUpload}
+          />
         )}
       </div>
     </div>

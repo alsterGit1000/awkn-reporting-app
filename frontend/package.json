@@ -8,10 +8,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@handsontable/react": "^15.3.0",
     "autoprefixer": "^10.4.21",
     "axios": "^1.6.0",
-    "react": "^18.0.0",
-    "react-dom": "^18.0.0",
+    "handsontable": "^15.3.0",
+    "react": "^17.0.2",
+    "react-dom": "^17.0.2",
+    "react-spreadsheet": "^0.10.1",
     "recharts": "^2.5.0"
   },
   "devDependencies": {
